@@ -153,7 +153,181 @@ Redis是单线程来处理命令的，所以一 条命令从客户端达到服�
 
 ### 2.2 字符串
 
+字符串类型是Redis最基础的数据结构。键都是字符串类型，而且 其他几种数据结构都是在字符串类型基础上构建的。值最大不能 超过512MB。
 
+<img src="./pic/redis_4.png" style="zoom: 50%;" />
+
+#### 2.2.1 命令
+
+1. **常用命令**
+
+```shell
+# 设置值 set
+# set key value [ex seconds] [px milliseconds] [nx|xx]
+# set命令有几个选项:
+# ex seconds:为键设置秒级过期时间
+# px milliseconds:为键设置毫秒级过期时间
+# nx:键必须不存在，才可以设置成功，用于添加; xx:与nx相反，键必须存在，才可以设置成功，用于更新。
+127.0.0.1:6379> set key value
+OK
+
+# 设置值 setex/setnx 和ex、nx作用一致
+# setex key seconds value 
+# setnx key value 因为redis单线程 可以用作分布式锁
+127.0.0.1:6379> setnx key value # 0-失败 1-成功
+(integer) 0
+
+# 批量设置值
+# mset key value [key value ...]
+127.0.0.1:6379> mset key1 value1 key2 value2 key3 value3
+OK
+
+# 获取值 get
+# get key
+127.0.0.1:6379> get key # 不存在则返回 nil
+"value"
+
+# 批量获取值
+# mget key [key ...]
+127.0.0.1:6379> mget key1 key2
+1) "1"
+2) "2"
+
+# 计数
+# incr key
+# 值不是整数，返回错误
+# 值是整数，返回自增后的结果
+# 键不存在，按照值为0自增，返回结果为1
+127.0.0.1:6379> exists key 
+(integer) 0 
+127.0.0.1:6379> incr key 
+(integer) 1
+# 除了incr命令，Redis提供了decr(自减)、incrby(自增指定数字)、 decrby(自减指定数字)、incrbyfloat(自增浮点数)
+# decr key
+# incrby key increment 
+# decrby key decrement 
+# incrbyfloat key increment
+```
+
+2. **不常用命令**
+
+```shell
+# 追加值 向字符串尾部追加值
+# append key value
+127.0.0.1:6379> get key
+"redis"
+127.0.0.1:6379> append key world 
+(integer) 10
+127.0.0.1:6379> get key 
+"redisworld"
+
+# 获取字符串长度 中文占3个字节
+# strlen key
+strlen key
+127.0.0.1:6379> get key 
+"redisworld" 
+127.0.0.1:6379> strlen key 
+(integer) 10
+
+# 设置并返回原值
+# getset key value
+127.0.0.1:6379> getset hello world 
+(nil)
+127.0.0.1:6379> getset hello redis 
+"world"
+
+# 获取部分字符串
+# getrange key start end
+127.0.0.1:6379> getrange key 0 4
+"redis"
+```
+
+#### 2.2.2 内部编码
+
+字符串类型的内部编码有3种：
+
+- int：8个字节的长整型
+
+- embstr：小于等于39个字节的字符串
+
+- raw：大于39个字节的字符串
+
+Redis会根据当前值的类型和长度决定使用哪种内部编码实现。
+
+```shell
+# 整数类型
+127.0.0.1:6379> set key 8653
+OK
+127.0.0.1:6379> object encoding key 
+"int"
+
+# 小于等于39个字节的字符串:embstr 
+127.0.0.1:6379> set key "hello,world" 
+OK
+127.0.0.1:6379> object encoding key 
+"embstr"
+
+
+#大于39个字节的字符串:raw
+127.0.0.1:6379> set key "one string greater than 39 byte........." 
+OK
+127.0.0.1:6379> object encoding key
+"raw"
+127.0.0.1:6379> strlen key
+(integer) 40
+```
+
+#### 2.2.3 经典使用场景
+
+1. **缓存功能**
+
+比较典型的缓存使用场景，其中Redis作为缓存层，MySQL作 为存储层，绝大部分请求的数据都是从Redis中获取。由于Redis具有支撑高 并发的特性，所以缓存通常能起到加速读写和降低后端压力的作用。
+
+<img src="./pic/redis_5.png" style="zoom: 40%;" />
+
+设计合理的键名，有 利于防止键冲突和项目的可维护性，比较推荐的方式是使用 “业务名-对象名-id[属性]” 作为键名。可以在能描 述键含义的前提下适当减少键的长度，从而减少由于键过长的内存浪费。
+
+2. **计数**
+
+许多应用都会使用Redis作为计数的基础工具，它可以实现快速计数、 查询缓存的功能，同时数据可以异步落地到其他数据源。
+
+```java
+// 视频播放数就会自增1
+long incrVideoCounter(long id) { 
+  key = "video:playCount:" + id; 
+  return redis.incr(key);
+}
+```
+
+3. **共享Session**
+
+一个分布式Web服务将用户的Session信息(例如用户登录信息)保存在各自服务器中，这样会造成一个问题，出于负载均衡的考虑，分布式服务会将用户的访问均衡到不同服务器上，用户刷新一次访问可能会发现需要重新登录，这个问题是用户无法容忍的。
+
+<img src="./pic/redis_6.png" style="zoom: 40%;" />
+
+为了解决这个问题，可以使用Redis将用户的Session进行集中管理，如下图所示，在这种模式下只要保证Redis是高可用和扩展性的，每次用户更新或者查询登录信息都直接从Redis中集中获取。
+
+<img src="./pic/redis_7.png" style="zoom: 40%;" />
+
+4. **限速**
+
+很多应用出于安全的考虑，会在每次进行登录时，让用户输入手机验证 码，从而确定是否是用户本人。但是为了短信接口不被频繁访问，会限制用 户每分钟获取验证码的频率。此功能可以使用Redis来实现。
+
+```java
+phoneNum = "138xxxxxxxx";
+key = "shortMsg:limit:" + phoneNum;
+// SET key value EX 60 NX
+isExists = redis.set(key,1,"EX 60","NX"); 
+if(isExists != null || redis.incr(key) <=5){
+	// 通过 
+}else{
+	// 限速 
+}
+```
+
+上述就是利用Redis实现了限速功能，例如一些网站限制一个IP地址不能在一秒钟之内访问超过n次也可以采用类似的思路。
+
+### 2.3 哈希
 
 
 
