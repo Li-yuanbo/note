@@ -329,6 +329,344 @@ if(isExists != null || redis.incr(key) <=5){
 
 ### 2.3 哈希
 
+在Redis中，哈希类型是指键值本身又是一个键值对结构，形如value={{field1，value1}，...{fieldN，valueN}}。
+
+<img src="./pic/redis_8.png" style="zoom: 40%;" />
+
+#### 2.3.1 命令
+
+```shell
+# 设置值 hset
+# hset key field value
+127.0.0.1:6379> hset key field value
+(integer) 1
+
+# 获取值 hget
+# hget key field
+127.0.0.1:6379> hget key field  # 不存在返回 nil
+"tom"
+
+# 删除值 hdel
+# hdel key field [field ...]
+127.0.0.1:6379> hdel key field
+(integer) 1
+127.0.0.1:6379> hdel key field
+(integer) 0
+
+# 计算field数量 hlen
+# hlen key
+127.0.0.1:6379> hlen key
+(integer) 3
+
+# 批量设置或获取field-value hmset hmget
+# hmset key field value [field value ...]
+127.0.0.1:6379> hmset key field1 value1 field2 value2
+# hmget key field [field ...]
+127.0.0.1:6379> hmget key field1 field2
+1) "value1"
+2) "value2"
+
+# 判断field是否存在 hexists
+# hexists key field
+127.0.0.1:6379> hexists key field  # 存在返回1 不存在返回0
+(integer) 1
+
+# 获取所有field hkeys
+# hkeys key
+127.0.0.1:6379> hkeys key
+1) "field1"
+2) "field2"
+
+# 获取所有value hvals
+# hvals key
+127.0.0.1:6379> hvals key
+1) "value1"
+2) "value2"
+
+# 获取所有field-value hgetall
+# hgetall key
+127.0.0.1:6379> hgetall key
+1) "field1"
+2) "value1"
+3) "field2"
+4) "value2"
+```
+
+#### 2.3.2 内部编码
+
+哈希类型的内部编码有两种：
+
+- ziplist(压缩列表)
+
+  **当哈希类型元素个数小于 hash-max-ziplist-entries 配置(默认512个)、同时所有值都小于hash-max-ziplist-value配置(默认64 字节)时，**Redis会使用ziplist作为哈希的内部实现，ziplist使用更加紧凑的结构实现多个元素的连续存储，所以在节省内存方面比hashtable更加优秀。
+
+- hashtable(哈希表)
+
+  当哈希类型无法满足ziplist的条件时，Redis会使用hashtable作为哈希的内部实现，因为此时ziplist的读写效率会下降，而hashtable的读写时间复杂度为O(1)。
+
+```shell
+# 内部编码为ziplist
+127.0.0.1:6379> hmset hashkey f1 v1 f2 v2 
+OK
+127.0.0.1:6379> object encoding hashkey 
+"ziplist"
+
+# 当有value大于64字节，内部编码会由ziplist变为hashtable
+127.0.0.1:6379> hset hashkey f3 "one string is bigger than 64 byte......" 
+OK
+127.0.0.1:6379> object encoding hashkey
+"hashtable"
+
+# 当field个数超过512，内部编码也会由ziplist变为hashtable
+127.0.0.1:6379> hmset hashkey f1 v1 f2 v2 f3 v3 ...... f513 v513
+OK
+127.0.0.1:6379> object encoding hashkey 
+"hashtable"
+```
+
+#### 2.3.3 使用场景
+
+关系型数据表记录的两条用户信息，用户的属性作为表的列，每条用户信息作为行。 如果将其用哈希类型存储在更新操作上会更加便捷。可以将每个用户的id定义为键后缀，多对field- value对应每个用户的属性。
+
+<img src="./pic/redis_9.png" style="zoom: 40%;" />
+
+需要注意的是哈希类型和关系型数据库有两点不同之处：
+
+- 哈希类型是稀疏的，而关系型数据库是完全结构化的，例如哈希类型每个键可以有不同的field，而关系型数据库一旦添加新的列，所有行都要为其设置值(即使为NULL)
+
+- 关系型数据库可以做复杂的关系查询，而Redis去模拟关系型复杂查询开发困难，维护成本高
+
+常用的缓存用户信息的三种方法如下：
+
+1. 原生字符串类型：每个属性一个键
+
+```shell
+set user:1:name tom
+set user:1:age 23
+set user:1:city beijing
+```
+
+ - 优点：简单直观，每个属性都支持更新操作
+ - 缺点：占用过多的键，内存占用量较大，同时用户信息内聚性比较差
+
+2. 序列化字符串类型：将用户信息序列化后用一个键保存
+
+```shell
+set user:1 serialize(userInfo)
+```
+
+- 优点：简化编程，如果合理的使用序列化可以提高内存的使用效率
+
+- 缺点：序列化和反序列化有一定的开销，同时每次更新属性都需要把全部数据取出进行反序列化，更新后再序列化到Redis中。
+
+3. 哈希类型：每个用户属性使用一对field-value，但是只用一个键保存
+
+```shell
+hmset user:1 name tom age 23 city beijing
+```
+
+- 优点：简单直观，如果使用合理可以减少内存空间的使用
+
+- 缺点：要控制哈希在ziplist和hashtable两种内部编码的转换，hashtable会消耗更多内存
+
+### 2.4 列表
+
+列表(list)类型是用来存储多个有序的字符串。在Redis中，可 以对列表两端插入(push)和弹出(pop)，还可以获取指定范围的元素列 表、获取指定索引下标的元素等。列表是一种比 较灵活的数据结构，它可以充当栈和队列的角色，在实际开发上有很多应用场景。
+
+<img src="./pic/redis_10.png" style="zoom: 50%;" />
+
+列表类型有两个特点：
+
+1. 列表中的元素是有序的，这就意味着可以通过索引下标获取某个元素或者某个范围内的元素列表
+
+2. 第二、列表中的元素可以是重复的
+
+#### 2.4.1 命令
+
+```shell
+# 从左边插入数据 rpush
+# rpush key value [value ...]
+127.0.0. 1:6379> rpush listkey a b c
+(integer) 3
+# 从右边插入数据 lpush
+# lpush key value [value ...]
+127.0.0. 1:6379> lpush listkey a b c
+# 向某个元素前/后插入元素 linsert
+# linsert key before|after pivot value
+127.0.0.1:6379> linsert listkey before b insert # a insert b c
+(integer) 4
+
+# 获取范围内元素 lrange
+# lrange key start end
+127.0.0.1:6379> lrange listkey 1 3 
+1) "insert"
+2) "b"
+3) "c"
+# 获取指定下标元素 lindex
+# lindex key index
+127.0.0.1:6379> lindex listkey -1 # 获取最后一个元素
+"c"
+# 获取链表长度 llen
+# llen key
+127.0.0.1:6379> llen listkey
+(integer) 4
+
+# 从链表左侧弹出元素 lpop
+# lpop key
+127.0.0.1:6379>t lpop listkey
+"a"
+127.0.0.1:6379> lrange listkey 0 -1 
+1) "insert"
+2) "b" 
+3) "c"
+# 从列表右侧弹出 rpop
+# rpop key
+127.0.0.1:6379>t rpop listkey
+"c"
+127.0.0.1:6379> lrange listkey 0 -1 
+1) "insert"
+2) "b" 
+# 删除指定元素 lrem
+# lrem key count value
+# count>0，从左到右，删除最多count个元素
+# count<0，从右到左，删除最多count绝对值个元素
+# count=0，删除所有
+127.0.0.1:6379> lrem listkey 4 a # 从列表左边开始删除4个为a的元素
+(integer) 4
+# 按照范围截取链表 ltrim
+# ltrim key start end
+127.0.0.1:6379> ltrim listkey 1 3 # 保留第2～4个元素
+OK
+
+# 修改指定元素
+# lset key index newValue
+127.0.0.1:6379> lset listkey 2 update 
+OK
+127.0.0.1:6379> lrange listkey 0 -1 
+1) "insert"
+2) "b"
+3) "update"
+
+# 阻塞操作
+# blpop key [key ...] timeout 
+# brpop key [key ...] timeout
+# key[key...]:多个列表的键。
+# timeout:阻塞时间(单位:秒)
+```
+
+#### 2.4.2 内部编码
+
+列表类型的内部编码有两种。
+
+- ziplist(压缩列表)
+
+  当列表的**元素个数小于list-max-ziplist-entries配置 (默认512个)，同时列表中每个元素的值都小于list-max-ziplist-value配置时 (默认64字节)，**Redis会选用ziplist来作为列表的内部实现来减少内存的使用
+
+- linkedlist(链表)
+
+  当列表类型无法满足ziplist的条件时，Redis会使用 linkedlist作为列表的内部实现
+
+```shell
+# 当元素个数较少且没有大元素时，内部编码为ziplist
+127.0.0.1:6379> rpush listkey e1 e2 e3 
+(integer) 3
+127.0.0.1:6379> object encoding listkey 
+"ziplist"
+
+# 当元素个数超过512个，内部编码变为linkedlist
+127.0.0.1:6379> rpush listkey e4 e5 ...... e512 e513 
+(integer) 513
+127.0.0.1:6379> object encoding listkey
+"linkedlist"
+
+# 或者当某个元素超过64字节，内部编码也会变为linkedlist
+127.0.0.1:6379> rpush listkey "one string is bigger than 64 byte......."
+(integer) 1
+127.0.0.1:6379> object encoding listkey
+"linkedlist"
+```
+
+#### 2.4.3 使用场景
+
+1. **消息队列**
+
+Redis的lpush+brpop命令组合即可实现阻塞队列，生产者客户端使用lrpush从列表左侧插入元素，多个消费者客户端使用brpop命令阻塞式的“抢”列表尾部的元素，多个客户端保证了消费的负载均衡和高可用性。
+
+<img src="./pic/redis_11.png" style="zoom: 50%;" />
+
+2. **文章列表**
+
+每个用户有属于自己的文章列表，现需要分页展示文章列表。此时可以考虑使用列表，因为列表不但是有序的，同时支持按照索引范围获取元素。
+
+- 每篇文章使用哈希结构存储，例如每篇文章有3个属性title、timestamp、content
+
+```shell
+hmset acticle:1 title xx timestamp 1476536196 content xxxx ...
+```
+
+- 向用户文章列表添加文章，user:{id}:articles作为用户文章列表的键，值为哈希存储文章的key
+
+```shell
+lpush user:1:acticles article:1 article:3 ...
+lpush user:k:acticles article:5...
+```
+
+- 分页获取用户文章列表，例如下面伪代码获取用户id=1的前10篇文章
+
+```shell
+articles = lrange user:1:articles 0 9 
+for article in {articles}
+hgetall {article}
+```
+
+**lpush+lpop=Stack(栈)** 
+
+**lpush+rpop=Queue(队列)** 
+
+**lpsh+ltrim=Capped Collection(有限集合)** 
+
+**lpush+brpop=Message Queue(消息队列)**
+
+### 2.5 集合
+
+集合(set)类型也是用来保存多个的字符串元素，但和列表类型不一 样的是，集合中不允许有重复元素，并且集合中的元素是无序的，不能通过索引下标获取元素。一个集合最多可以存储232-1个元 素。Redis除了支持集合内的增删改查，同时还支持多个集合取交集、并集、差集。
+
+<img src="./pic/redis_12.png" style="zoom: 50%;" />
+
+#### 2.5.1 命令
+
+```shell
+# 添加元素 返回结果为添加成功的元素个数 sadd
+# sadd key element [element ...]
+127.0.0.1:6379> exists myset 
+(integer) 0
+127.0.0.1:6379> sadd myset a b c 
+(integer) 3
+127.0.0.1:6379> sadd myset a b 
+(integer) 0
+
+# 删除元素 返回结果为成功删除元素个数 srem
+# srem key element [element ...]
+127.0.0.1:6379> srem myset a b 
+(integer) 2
+127.0.0.1:6379> srem myset delete 
+(integer) 0
+
+# 
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
