@@ -4,13 +4,13 @@ Go 语言在并发编程方面有强大的能力，这离不开语言层面对�
 
 谈到 Go 语言调度器，我们绕不开的是操作系统、进程与线程这些概念，线程是操作系统调度时的最基本单元，而 Linux 在调度器并不区分进程和线程的调度，它们在不同操作系统上也有不同的实现，但是在大多数的实现中线程都属于进程：
 
-<img src="/Users/yuanbli/yuanbli/markdown/Golang/pic/GMP_1.png" alt="4.1" style="zoom:75%;" />
+<img src="./pic/GMP_1.png" alt="4.1" style="zoom:75%;" />
 
 多个线程可以属于同一个进程并共享内存空间。因为多线程不需要创建新的虚拟内存空间，所以它们也不需要内存管理单元处理上下文的切换，线程之间的通信也正是基于共享的内存进行的，与重量级的进程相比，线程显得比较轻量。
 
 虽然线程比较轻量，但是在调度时也有比较大的额外开销。每个线程会都占用 1M 以上的内存空间，在切换线程时不止会消耗较多的内存，恢复寄存器中的内容还需要向操作系统申请或者销毁资源，每一次线程上下文的切换都需要消耗 ~1us 左右的时间，但是 Go 调度器对 Goroutine 的上下文切换约为 ~0.2us，减少了 80% 的额外开销。
 
-<img src="/Users/yuanbli/yuanbli/markdown/Golang/pic/GMP_2.png" alt="4.1" style="zoom:75%;" />
+<img src="./pic/GMP_2.png" alt="4.1" style="zoom:75%;" />
 
 Go 语言的调度器通过使用与 CPU 数量相等的线程减少线程频繁切换的内存开销，同时在每一个线程上执行额外开销更低的 Goroutine 来降低操作系统和硬件的负载。
 
@@ -241,7 +241,7 @@ Go 语言在 1.14 版本中实现了非协作的抢占式调度，在实现的�
 - Goroutine G：是一个待执行的任务
 - 处理器 P：处理器，它可以被看做运行在线程上的本地调度器
 
-<img src="/Users/yuanbli/yuanbli/markdown/Golang/pic/GMP_4.png" style="zoom:50%;" />
+<img src="./pic/GMP_4.png" style="zoom:50%;" />
 
 #### 1.2.1 goroutine G
 
@@ -306,7 +306,7 @@ type gobuf struct {
 - 可运行：Goroutine 已经准备就绪，可以在线程运行，如果当前程序中有非常多的 Goroutine，每个 Goroutine 就可能会等待更多的时间，即 `_Grunnable`
 - 运行中：Goroutine 正在某个线程上运行，即 `_Grunning`
 
-<img src="/Users/yuanbli/yuanbli/markdown/Golang/pic/GMP_5.png" style="zoom:50%;" />
+<img src="./pic/GMP_5.png" style="zoom:50%;" />
 
 上图展示了 Goroutine 状态迁移的常见路径，其中包括创建 Goroutine 到 Goroutine 被执行、触发系统调用或者抢占式调度器的状态迁移过程。
 
@@ -316,7 +316,7 @@ Go 语言并发模型中的 M 是操作系统线程。调度器最多可以创�
 
 在默认情况下，运行时会将 `GOMAXPROCS` 设置成当前机器的核数，我们也可以在程序中使用 `runtime.GOMAXPROCS`来改变最大的活跃线程数。
 
-<img src="/Users/yuanbli/yuanbli/markdown/Golang/pic/GMP_6.png" style="zoom:50%;" />
+<img src="./pic/GMP_6.png" style="zoom:50%;" />
 
 在默认情况下，一个四核机器会创建四个活跃的操作系统线程，每一个线程都对应一个运行时中的 `runtime.m`结构体。
 
