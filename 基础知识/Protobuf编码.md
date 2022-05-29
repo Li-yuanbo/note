@@ -18,7 +18,7 @@ Base 64 最初设计 是用于在邮件嵌入文件，可以将任何形式的�
 
 00101000     0010<font color=red>0000</font>    00<font color=red>1001</font><font color=Blue>11</font>   00<font color=Blue>000010</font>  00<font color=green>110100</font>  00<font color=#871F78>110000</font>
 
-<img src="./pic/protobuf-1.png" alt="1-1MySQL服务器逻辑架构图" style="zoom: 67%;" />
+<img src="./pic/protobuf_1.png" style="zoom: 100%;" />
 
 Base 64 编码是按照6 bits为一组进行编码，每3个字节的原始数据要用4个字节来存储。编码后的长度要为4的整数倍，不足4字节的部分要用pad补齐，所以最终编码后结果为`ognC0w==`。
 
