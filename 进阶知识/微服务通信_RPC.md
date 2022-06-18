@@ -66,8 +66,8 @@ RPC框架就是在RPC协议的基础上，完善一些偏业务实际应用的�
   - 兼容协议：gRPC、Thrift
   - Triple协议是Dubbo3的主力协议，完整兼容gRPC over HTTP/2
 - DubboX是基于Dubbo框架开发的RPC框架，支持REST风格远程调用，并增加了新的feature
-- Motan是微博开园的轻量级、方便使用的Java语言的RPC框架
-  - ​	使用对java更友好的hessian2进行序列化
+- Motan是微博开源的轻量级、方便使用的Java语言的RPC框架
+  - 使用对java更友好的hessian2进行序列化
   - 通信协议支持Motan、HTTP、TCP
 
 - RPCX是一个用Go实现的类似Dubbo的分布式RPC框架
